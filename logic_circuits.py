@@ -3,100 +3,34 @@ from pyglet.window import mouse, key
 from Node import Node
 from Inverter import Inverter
 from Switch import Switch
+from View import View
 
-
-class View:
-    def __init__(self, x=0, y=0):
-        self.x = x
-        self.y = y
-        self.scale = 0.15
-        self.objects = []
-        self.selected_objects = []
-        self.mouse_pos = [0, 0]
-        self.dragged = False
-        self.drag_dist = 0
-        self.creating_connection = False
-        self.selected = None
-        self.parent_Node = None
-
-    def move(self, dx, dy):
-        self.x += dx
-        self.y += dy
-
-        for obj in self.objects:
-            obj.move_icon(dx, dy)
-
-    def change_scale(self, scale):
-        self.scale += scale
-
-    def add_object(self, obj):
-        self.objects.append(obj)
-
-    def select(self, x, y):
-        select = False
-        self.selected_objects.clear()
-
-        for obj in self.objects:
-            if type(obj) == Switch:
-                if obj.select(x, y, False):
-                    obj.flip()
-                    return False
-
-            obj.deselect()
-
-            if obj.select(x, y):
-                self.selected_objects.append(obj)
-                select = True
-
-        return select
-
-    def select_multiple(self, x, y):
-        for obj in self.objects:
-            if obj.select(x, y):
-                if obj in self.selected_objects:
-                    obj.deselect()
-                    self.selected_objects.remove(obj)
-                else:
-                    self.selected_objects.append(obj)
-
-    def get_node(self, x, y):
-        for obj in self.objects:
-            if obj.select(x, y, highlight = False):
-                return obj
-        return None
-
-
-window = pgl.window.Window(1280, 720, resizable = True)
+window = pgl.window.Window(1280, 720, resizable=True)
 window.set_minimum_size(400, 400)
 main_batch = pgl.graphics.Batch()
-view = View(x = window.width // 2, y = window.height // 2)
-pgl.gl.glLineWidth(3)
+view = View(window.width // 2, window.height // 2, window, main_batch)
 
 
 @window.event
 def on_key_press(symbol, modifiers):
     # _(num) is not protected, _ is to make the name valid
-    if view.selected is not None and symbol in [key._1, key._2]:
-        view.selected.delete()
 
     if symbol == key._1:
-        view.selected = None
+        if view.current_obj: view.current_obj.delete()
+        view.current_obj = None
         window.set_mouse_visible(True)
 
     elif symbol == key._2:
-        view.selected = Node(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch = main_batch)
-        view.selected.opacity = 128
-        window.set_mouse_visible(False)
+        if view.current_obj: view.current_obj.delete()
+        view.current_obj = Node(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
 
     elif symbol == key._3:
-        view.selected = Inverter(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch = main_batch)
-        view.selected.opacity = 128
-        window.set_mouse_visible(False)
+        if view.current_obj: view.current_obj.delete()
+        view.current_obj = Inverter(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
 
     elif symbol == key._4:
-        view.selected = Switch(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch = main_batch)
-        view.selected.opacity = 128
-        window.set_mouse_visible(False)
+        if view.current_obj: view.current_obj.delete()
+        view.current_obj = Switch(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
 
     elif symbol == key.DELETE:
         for obj in view.selected_objects:
@@ -104,26 +38,36 @@ def on_key_press(symbol, modifiers):
             view.objects.remove(obj)
         view.selected_objects.clear()
 
+    elif symbol == key.O:
+        view.move(-view.x + window.width // 2, -view.y + window.height // 2)
+
+    if view.current_obj:
+        view.current_obj.opacity = 128
+        window.set_mouse_visible(False)
+
 
 @window.event
 def on_mouse_leave(x, y):
-    if view.selected is not None:
-        view.selected.opacity = 0
+    view.mouse_pos = [x, y]
+    if view.current_obj:
+        view.current_obj.hide()
 
 
 @window.event
 def on_mouse_enter(x, y):
-    if view.selected is not None:
-        view.selected.opacity = 128
+    view.mouse_pos = [x, y]
+    if view.current_obj:
+        view.current_obj.show()
 
 
 @window.event
 def on_mouse_motion(x, y, dx, dy):
     view.mouse_pos = [x, y]
 
-    if view.selected is not None:
+    if view.current_obj:
         try:
-            view.selected.move_icon(x - view.selected.width // 2, y - view.selected.height // 2, absolute = True)
+            x, y = view.grid_pos(x, y)
+            view.current_obj.move_icon(x, y, absolute=True)
         except AttributeError:
             pass
 
@@ -131,87 +75,103 @@ def on_mouse_motion(x, y, dx, dy):
 @window.event
 def on_mouse_drag(x, y, dx, dy, button, modifiers):
     view.mouse_pos = [x, y]
-    view.drag_dist += dx + dy
 
-    if abs(view.drag_dist) > 10:
-        view.dragged = True
+    for obj in view.selected_objects:
+        obj.pos_x += dx
+        obj.pos_y += dy
 
-    if view.selected is not None:
-        window.set_mouse_visible(True)
-        view.selected.opacity = 0
-    
-    if button == mouse.LEFT and not view.creating_connection:
+    if view.current_obj: view.current_obj.move_icon(dx, dy)
+
+    if button == mouse.LEFT:
+        if len(view.selected_objects) > 0:
+            view.keep_selected = True
+            window.set_mouse_visible(False)
+
+        for obj in view.selected_objects:
+            new_x, new_y = view.grid_pos(obj.pos_x, obj.pos_y)
+            obj.move_icon(new_x, new_y, absolute=True)
+
+    if button == mouse.RIGHT:
         view.move(dx, dy)
 
 
 @window.event
 def on_mouse_press(x, y, button, modifiers):
-    view.parent_Node = view.get_node(x, y)
-    if view.parent_Node is not None: view.creating_connection = True
+    view.mouse_pos = [x, y]
+
+    if button == mouse.RIGHT:
+        window.set_mouse_cursor(window.get_system_mouse_cursor(window.CURSOR_SIZE))
+
+    if button == mouse.LEFT:
+        obj = view.get_obj(x, y)
+
+        if obj and not (modifiers and key.MOD_SHIFT):
+            if obj not in view.selected_objects:
+                view.parent_obj = obj
+                view.creating_connection = True
+                view.deselect_all()
+
+        else:
+            if not (modifiers and key.MOD_SHIFT): view.deselect_all()
+            view.select_box = [x, y]
 
 
 @window.event
 def on_mouse_release(x, y, button, modifiers):
+    view.mouse_pos = [x, y]
 
-    if view.selected is not None:
-        view.selected.opacity = 128
-        window.set_mouse_visible(False)
+    window.set_mouse_cursor(window.get_system_mouse_cursor(window.CURSOR_DEFAULT))
+    window.set_mouse_visible(True)
 
-    if view.dragged and view.creating_connection:
-        child = view.get_node(x, y)
+    if button == mouse.LEFT:
+        obj = view.get_obj(x, y)
 
-        if child is not None:
-            view.parent_Node.add_child(child)
+        if obj:
+            if view.creating_connection and obj is not view.parent_obj: view.parent_obj.add_child(obj)
+            else:
+                if modifiers and key.MOD_SHIFT: view.select_multiple(x, y)
+                elif not view.keep_selected: view.select(x, y)
 
-    elif not view.dragged and button == mouse.LEFT:
-        if modifiers and key.MOD_SHIFT:
-            view.select_multiple(x, y)
+        elif not view.creating_connection:
+            if not view.keep_selected: view.deselect_all()
 
-        elif not view.select(x, y):
-            if view.selected is not None:
-                if type(view.selected) == Node:
-                    obj = Node(x - view.x, y - view.y, x, y, view.scale, batch = main_batch)
+            if view.select_box_size(x, y) > 5:
+                view.select_area(x, y)
+                view.select_box = None
 
-                elif type(view.selected) == Inverter:
-                    obj = Inverter(x - view.x, y - view.y, x, y, view.scale, batch = main_batch)
+            elif view.current_obj:
+                view.place_object(x, y)
 
-                elif type(view.selected) == Switch:
-                    obj = Switch(x - view.x, y - view.y, x, y, view.scale, batch = main_batch)
-
-                obj.move_icon(-obj.width // 2, -obj.height // 2)
-                view.add_object(obj)
-
-    view.dragged = False
-    view.drag_dist = 0
-    view.creating_connection = False
+        view.creating_connection = False
+        view.select_box = None
+        view.keep_selected = False
 
 
 @window.event
 def on_mouse_scroll(x, y, scroll_x, scroll_y):
     pass
-    # if 0.1 <= view.scale + scroll_y * 0.1 < 1:
-    #    view.change_scale(scroll_y * 0.1)
-    #     view.scale = max(view.scale + scroll_y, 1)
-    #     x -= int(window.width / 2)
-    #     y -= int(window.width / 2)
-    #
-    #     view.x += x - (x * view.scale) - view.scale / 2
-    #     view.y += y - (y * view.scale) - view.scale / 2
+
+
+def line(vertices, colour=(25, 25, 25)):
+    """ draw a line """
+    pgl.graphics.draw(2, pgl.gl.GL_LINES, ('v2i', vertices), ('c3B', colour * 2))
 
 
 @window.event
 def on_draw():
     window.clear()
+    view.draw_grid()
 
-    pgl.graphics.draw(2, pgl.gl.GL_LINES, ('v2i', (view.x, 0, view.x, window.height)), ('c3B', (50, 50, 50, 50, 50, 50)))
-    pgl.graphics.draw(2, pgl.gl.GL_LINES, ('v2i', (0, view.y, window.width, view.y)), ('c3B', (50, 50, 50, 50, 50, 50)))
+    if view.creating_connection:
+        line((view.parent_obj.x, view.parent_obj.y,
+              view.mouse_pos[0], view.mouse_pos[1]), (100, 100, 100))
 
-    if view.creating_connection and view.dragged:
-        pgl.graphics.draw(2, pgl.gl.GL_LINES,
-                          ('v2i', (view.parent_Node.x + view.parent_Node.width // 2,
-                                   view.parent_Node.y + view.parent_Node.height // 2,
-                                   view.mouse_pos[0], view.mouse_pos[1])),
-                          ('c3B', (100, 100, 100, 100, 100, 100)))
+    if view.select_box_size(view.mouse_pos[0], view.mouse_pos[1]) > 5:
+        # draw a box to represent the selection area
+        line((view.select_box[0], view.select_box[1], view.mouse_pos[0], view.select_box[1]), (20, 255, 100))
+        line((view.select_box[0], view.select_box[1], view.select_box[0], view.mouse_pos[1]), (20, 255, 100))
+        line((view.select_box[0], view.mouse_pos[1], view.mouse_pos[0], view.mouse_pos[1]), (20, 255, 100))
+        line((view.mouse_pos[0], view.select_box[1], view.mouse_pos[0], view.mouse_pos[1]), (20, 255, 100))
 
     main_batch.draw()
 

@@ -4,15 +4,13 @@ from Node import Node
 
 class Switch(Node):
     def __init__(self, x, y, view_x, view_y, scale, batch=None):
-        super().__init__(x, y, view_x, view_y, scale, batch = batch)
+        super().__init__(x, y, view_x, view_y, scale * 1.5, batch = batch)
         self.image = pgl.image.load('resources/switch_off.png')
 
         self._power_overlay = None
+        self._selected_overlay.image = pgl.image.load('resources/switch_select.png')
 
-        self._selected_overlay = pgl.sprite.Sprite(pgl.image.load('resources/switch_select.png'), view_x, view_y,
-                                                   batch=batch)
-        self._selected_overlay.opacity = 0
-        self._selected_overlay.scale = scale
+        self._center_image()
 
     def flip(self):
         if self.powered:
@@ -21,6 +19,8 @@ class Switch(Node):
         else:
             self.powered = True
             self.image = pgl.image.load('resources/switch_on.png')
+
+        self._center_image()
 
         for child in self.children:
             child.update()
