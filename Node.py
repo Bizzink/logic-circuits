@@ -13,7 +13,7 @@ class _Child:
         self._parent = parent
         self._line = None
         self._arrow = None
-        self._deleted = False
+        self.deleted = False
 
         self._line = batch.add(2, pgl.gl.GL_LINES, None,
                                ('v2i', (parent.x, parent.y, child.x, child.y)),
@@ -26,7 +26,7 @@ class _Child:
 
         self._arrow.image.anchor_x = self._arrow.image.width // 2
         self._arrow.image.anchor_y = self._arrow.image.height // 2
-        self._arrow.scale = 0.4
+        self._arrow.scale = 0.25
 
         self.update_vertices()
         self.update()
@@ -44,7 +44,7 @@ class _Child:
 
         self._arrow.image.anchor_x = self._arrow.image.width // 2
         self._arrow.image.anchor_y = self._arrow.image.height // 2
-        self._arrow.scale = 0.4
+        self._arrow.scale = 0.25
 
     def update_vertices(self):
         """ Update connection vertex positions """
@@ -62,8 +62,8 @@ class _Child:
 
     def delete(self):
         """ Remove connection references between parent and child """
-        if not self._deleted:
-            self._deleted = True
+        if not self.deleted:
+            self.deleted = True
 
             self._line.delete()
             self._arrow.delete()
@@ -94,6 +94,9 @@ class Node(pgl.sprite.Sprite):
         self._selected_overlay.scale = scale
 
         self._center_image()
+
+    def __str__(self):
+        return f"Node(x={self.x}, y={self.y}, powered={self.powered}, {len(self.children)} children, {len(self.sources)} sources)"
 
     def _center_image(self):
         """ set anchor points of image to be on x, y """
@@ -137,6 +140,14 @@ class Node(pgl.sprite.Sprite):
 
     def update_connections(self):
         """ update the vertices of all children """
+        i = 0
+
+        while i < len(self.children):
+            if self.children[i].deleted:
+                self.children.remove(self.children[i])
+            else:
+                i += 1
+
         for child in self.children:
             child.update_vertices()
 

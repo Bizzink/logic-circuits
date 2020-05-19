@@ -20,6 +20,7 @@ class View:
         self.creating_connection = False
         self.select_box = None
         self.keep_selected = False
+        self.held_copy = None
 
         # pyglet has no way of directly getting mouse pos, so it is tracked using this
         self.mouse_pos = [0, 0]
@@ -104,6 +105,39 @@ class View:
         if self.select_box is not None:
             return sqrt((self.select_box[0] - x) ** 2 + (self.select_box[1] - y) ** 2)
         return 0
+
+    def duplicate(self):
+        """ duplicate selected objects into held_copy """
+        if self.held_copy or len(self.selected_objects) == 0: return
+
+        self.held_copy = []
+        object_children = []
+
+        for obj in self.selected_objects:
+            # create new instance of object
+            obj_copy = type(obj).__new__(type(obj))
+            obj_copy.__init__(obj.x, obj.y, obj.x, obj.y, self.scale, batch = self._batch)
+
+            self.held_copy.append(obj_copy)
+            self.objects.append(obj_copy)
+
+            obj_children = []
+
+            for child in obj.children:
+                child = child.get_child()
+                if child in self.selected_objects:
+                    obj_children.append(self.selected_objects.index(child))
+
+            object_children.append(obj_children)
+
+        self.deselect_all()
+
+        for ind, obj in enumerate(self.held_copy):
+            for child in object_children[ind]:
+                obj.add_child(self.held_copy[child])
+
+            obj.select()
+            self.selected_objects.append(obj)
 
     def get_obj(self, x, y):
         """ return the object at (screen) x, y if it exists """

@@ -1,4 +1,4 @@
-# logic-circuits
+````# logic-circuits
 Simple logic circuit simulation
 
 signals travel one way through connections

@@ -13,37 +13,43 @@ view = View(window.width // 2, window.height // 2, window, main_batch)
 
 @window.event
 def on_key_press(symbol, modifiers):
-    # _(num) is not protected, _ is to make the name valid
+    if modifiers:
+        if key.MOD_CTRL:
+            if symbol == key.D:
+                view.duplicate()
 
-    if symbol == key._1:
-        if view.current_obj: view.current_obj.delete()
-        view.current_obj = None
-        window.set_mouse_visible(True)
+    else:
+        # _(num) is not protected, _ is to make the name valid
 
-    elif symbol == key._2:
-        if view.current_obj: view.current_obj.delete()
-        view.current_obj = Node(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
+        if symbol == key._1:
+            if view.current_obj: view.current_obj.delete()
+            view.current_obj = None
+            window.set_mouse_visible(True)
 
-    elif symbol == key._3:
-        if view.current_obj: view.current_obj.delete()
-        view.current_obj = Inverter(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
+        elif symbol == key._2:
+            if view.current_obj: view.current_obj.delete()
+            view.current_obj = Node(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
 
-    elif symbol == key._4:
-        if view.current_obj: view.current_obj.delete()
-        view.current_obj = Switch(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
+        elif symbol == key._3:
+            if view.current_obj: view.current_obj.delete()
+            view.current_obj = Inverter(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
 
-    elif symbol == key.DELETE:
-        for obj in view.selected_objects:
-            obj.delete()
-            view.objects.remove(obj)
-        view.selected_objects.clear()
+        elif symbol == key._4:
+            if view.current_obj: view.current_obj.delete()
+            view.current_obj = Switch(0, 0, view.mouse_pos[0], view.mouse_pos[1], view.scale, batch=main_batch)
 
-    elif symbol == key.O:
-        view.move(-view.x + window.width // 2, -view.y + window.height // 2)
+        elif symbol == key.DELETE:
+            for obj in view.selected_objects:
+                obj.delete()
+                view.objects.remove(obj)
+            view.selected_objects.clear()
 
-    if view.current_obj:
-        view.current_obj.opacity = 128
-        window.set_mouse_visible(False)
+        elif symbol == key.O:
+            view.move(-view.x + window.width // 2, -view.y + window.height // 2)
+
+        if view.current_obj:
+            view.current_obj.opacity = 128
+            window.set_mouse_visible(False)
 
 
 @window.event
@@ -71,6 +77,14 @@ def on_mouse_motion(x, y, dx, dy):
         except AttributeError:
             pass
 
+    if view.held_copy:
+        for obj in view.held_copy:
+            obj.pos_x += dx
+            obj.pos_y += dy
+
+            new_x, new_y = view.grid_pos(obj.pos_x, obj.pos_y)
+            obj.move_icon(new_x, new_y, absolute=True)
+
 
 @window.event
 def on_mouse_drag(x, y, dx, dy, button, modifiers):
@@ -83,13 +97,22 @@ def on_mouse_drag(x, y, dx, dy, button, modifiers):
     if view.current_obj: view.current_obj.move_icon(dx, dy)
 
     if button == mouse.LEFT:
-        if len(view.selected_objects) > 0:
-            view.keep_selected = True
-            window.set_mouse_visible(False)
+        if view.held_copy:
+            for obj in view.held_copy:
+                obj.pos_x += dx
+                obj.pos_y += dy
 
-        for obj in view.selected_objects:
-            new_x, new_y = view.grid_pos(obj.pos_x, obj.pos_y)
-            obj.move_icon(new_x, new_y, absolute=True)
+                new_x, new_y = view.grid_pos(obj.pos_x, obj.pos_y)
+                obj.move_icon(new_x, new_y, absolute=True)
+
+        else:
+            if len(view.selected_objects) > 0:
+                view.keep_selected = True
+                window.set_mouse_visible(False)
+
+            for obj in view.selected_objects:
+                new_x, new_y = view.grid_pos(obj.pos_x, obj.pos_y)
+                obj.move_icon(new_x, new_y, absolute=True)
 
     if button == mouse.RIGHT:
         view.move(dx, dy)
@@ -102,7 +125,7 @@ def on_mouse_press(x, y, button, modifiers):
     if button == mouse.RIGHT:
         window.set_mouse_cursor(window.get_system_mouse_cursor(window.CURSOR_SIZE))
 
-    if button == mouse.LEFT:
+    if button == mouse.LEFT and not view.held_copy:
         obj = view.get_obj(x, y)
 
         if obj and not (modifiers and key.MOD_SHIFT):
@@ -124,6 +147,9 @@ def on_mouse_release(x, y, button, modifiers):
     window.set_mouse_visible(True)
 
     if button == mouse.LEFT:
+        if view.held_copy:
+            view.held_copy = None
+
         obj = view.get_obj(x, y)
 
         if obj:
