@@ -11,8 +11,6 @@ class _Child:
 
         self._child = child
         self._parent = parent
-        self._line = None
-        self._arrow = None
         self.deleted = False
 
         self._line = batch.add(2, pgl.gl.GL_LINES, None,
@@ -72,47 +70,36 @@ class _Child:
 
 
 class Node(pgl.sprite.Sprite):
-    def __init__(self, x, y, view_x, view_y, scale, batch=None):
-        super().__init__(pgl.image.load('resources/Node.png'), view_x, view_y, batch=batch,
-                         group=pgl.graphics.OrderedGroup(2))
+    def __init__(self, x, y, scale, batch):
+        image = pgl.image.load(f"resources/{type(self).__name__}_unpowered_unselected.png")
+        super().__init__(image, x, y, batch=batch, group=pgl.graphics.OrderedGroup(2))
 
         self.scale = scale
-        self.pos_x = x
-        self.pos_y = y
+
         self.children = []
         self.sources = []
         self.powered = False
+        self.selected = False
 
-        self._power_overlay = pgl.sprite.Sprite(pgl.image.load('resources/Node_power.png'), view_x, view_y,
-                                                batch=batch, group=pgl.graphics.OrderedGroup(3))
-        self._power_overlay.visible = False
-        self._power_overlay.scale = scale
+        self._update_image()
 
-        self._selected_overlay = pgl.sprite.Sprite(pgl.image.load('resources/Node_select.png'), view_x, view_y,
-                                                   batch=batch, group=pgl.graphics.OrderedGroup(3))
-        self._selected_overlay.visible = False
-        self._selected_overlay.scale = scale
-
-        self._center_image()
+        # for tracking x, y when moving icon while snapping to grid
+        self.pos_x, self.pos_y = x, y
 
     def __str__(self):
         return f"Node(x={self.x}, y={self.y}, powered={self.powered}, {len(self.children)} children, {len(self.sources)} sources)"
 
-    def _center_image(self):
-        """ set anchor points of image to be on x, y """
+    def _update_image(self):
+        """ get image based on selected, powered state """
+        powered = "powered" if self.powered else "unpowered"
+        selected = "selected" if self.selected else "unselected"
+
+        self.image = pgl.image.load(f"resources/{type(self).__name__}_{powered}_{selected}.png")
+
+        # center image anchor point
         self.image.anchor_x = self.image.width // 2
         self.image.anchor_y = self.image.height // 2
         self.update()
-
-        if self._power_overlay:
-            self._power_overlay.image.anchor_x = self._power_overlay.image.width // 2
-            self._power_overlay.image.anchor_y = self._power_overlay.image.height // 2
-            self._power_overlay.update()
-
-        if self._selected_overlay:
-            self._selected_overlay.image.anchor_x = self._selected_overlay.image.width // 2
-            self._selected_overlay.image.anchor_y = self._selected_overlay.image.height // 2
-            self._selected_overlay.update()
 
     def move_icon(self, x, y, absolute=False):
         """ Move sprite & overlay sprites by x, y or to x, y if absolute. """
@@ -123,33 +110,28 @@ class Node(pgl.sprite.Sprite):
             self.x += x
             self.y += y
 
-        # move overlay sprites if they exist
-        if self._power_overlay:
-            self._power_overlay.x = self.x
-            self._power_overlay.y = self.y
-
-        if self._selected_overlay:
-            self._selected_overlay.x = self.x
-            self._selected_overlay.y = self.y
-
         # move connection line for all connections
         self.update_connections()
+        for source in self.sources: source.update_connections()
 
-        for source in self.sources:
-            source.update_connections()
+    def move_pos(self, dx = None, dy = None, to_icon = False):
+        """ move tracking pos - for use when moving while snapping to grid """
+        if to_icon:
+            self.pos_x = self.x
+            self.pos_y = self.y
+        else:
+            self.pos_x += dx
+            self.pos_y += dy
 
     def update_connections(self):
-        """ update the vertices of all children """
+        """ update the vertices of all children, remove deleted children """
         i = 0
-
         while i < len(self.children):
             if self.children[i].deleted:
                 self.children.remove(self.children[i])
             else:
+                self.children[i].update_vertices()
                 i += 1
-
-        for child in self.children:
-            child.update_vertices()
 
     def update_power(self):
         """ Update powered state by checking all sources to see if they are powered,
@@ -161,25 +143,23 @@ class Node(pgl.sprite.Sprite):
 
         # preform updates only if power state has changed
         if self.powered != prev_power:
-            if self.powered:
-                self._power_overlay.visible = True
-            else:
-                self._power_overlay.visible = False
-
-            for child in self.children:
-                child.update()
+            self._update_image()
+            for child in self.children: child.update()
 
     def add_source(self, source):
         """ Add power source to sources if it is not already in sources """
         if source not in self.sources: self.sources.append(source)
+        self.update_connections()
 
-    def remove_source(self, source, remove_from_list=False):
-        """ Remove source if it is in sources
-         remove_from_list should be false unless this node is not being deleted """
+    def remove_source(self, source):
+        """ Remove source if it is in sources """
         if source in self.sources:
-
-            if remove_from_list: self.sources.remove(source)
+            self.sources.remove(source)
             source.remove_child(self)
+            source.update_connections()
+
+        self.update_connections()
+        self.update_power()
 
     def add_child(self, new_child):
         """ Create new child object if child is not already in children """
@@ -188,59 +168,45 @@ class Node(pgl.sprite.Sprite):
                 return
 
         self.children.append(_Child(self, new_child, self.batch))
+        self.update_connections()
 
-    def remove_child(self, child_obj, remove_from_list = False):
-        """ Remove child from children
-         remove_from_list should be false unless this node is not being deleted"""
+    def remove_child(self, child_obj):
+        """ Remove child from children """
         # if child_obj is _Child class
         if type(child_obj) == _Child and child_obj in self.children:
-            if remove_from_list: self.children.remove(child_obj)
+            self.children.remove(child_obj)
             child_obj.delete()
 
         # if child_obj is child node
         else:
             for child in self.children:
                 if child.get_child() == child_obj:
-                    if remove_from_list: self.children.remove(child)
+                    self.children.remove(child)
                     child.delete()
+
+        self.update_connections()
 
     def select(self, x=None, y=None, highlight=True):
         """ Draw selected overlay & return if x, y is within sprite """
-        self.pos_x = self.x
-        self.pos_y = self.y
+        if x is None and y is None and highlight:
+            self.selected = True
+            self._update_image()
 
-        if x is None and y is None:
+        if x and self.x - self.width / 2 < x < self.x + self.width / 2 and self.y - self.height / 2 < y < self.y + self.height / 2:
             if highlight:
-                self._selected_overlay.visible = True
+                self.selected = True
+                self._update_image()
             return True
-
-        if self.x - self.width // 2 < x < self.x + self.width // 2 and self.y - self.height // 2 < y < self.y + self.height // 2:
-            if highlight:
-                self._selected_overlay.visible = True
-
-            return True
+        self._update_image()
         return False
 
     def deselect(self):
         """ Remove select overlay """
-        self._selected_overlay.visible = False
-
-    def show(self):
-        """ set sprite to visible """
-        self.visible = True
-        if self.powered and self._power_overlay: self._power_overlay.visible = True
-
-    def hide(self):
-        """ set sprite to invisible """
-        self.visible = False
-        if self._power_overlay: self._power_overlay.visible = False
+        self.selected = False
+        self._update_image()
 
     def delete(self):
         """ Delete self and remove child and source references """
-        for child in self.children: child.delete()
-        for source in self.sources: self.remove_source(source)
-
-        self._selected_overlay.delete()
-        if self._power_overlay: self._power_overlay.delete()
-
+        while len(self.children) > 0: self.remove_child(self.children[0])
+        while len(self.sources) > 0: self.remove_source(self.sources[0])
         super().delete()
