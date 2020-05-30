@@ -5,6 +5,7 @@ class Inverter(Node):
     def __init__(self, x, y, scale, batch):
         super().__init__(x, y, scale, batch)
         self.powered = True
+        self._update_image()
 
     def update_power(self):
         """ Invert typical powered function """
